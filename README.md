@@ -1,5 +1,5 @@
 A small library for creating polymorphic handles with inline storage.
-
+See example for usage, see include/poly_handle/poly.hpp for further explaination
 
 ```c++
 #include <poly_handle/poly.hpp>
@@ -19,10 +19,10 @@ struct printable_concept : poly::concept
 template<typename Base>
 struct printable_model : Base
 {
-	using Base::Base;
+	using Base::Base, Base::data;
 	static std::ostream& _print(void const* self, std::ostream& os)
 	{
-		return os << Base::data(self);
+		return os << data(self);
 	}
 	static constexpr printable_concept vtable{ Base::vtable, _print };
 };

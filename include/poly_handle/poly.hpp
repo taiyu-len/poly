@@ -1,4 +1,15 @@
+#pragma once
+#ifndef POLY_HANDLE_POLY_HPP
+#define POLY_HANDLE_POLY_HPP
+
 #include <memory>
+// unique_ptr
+// make_unique
+#include <type_traits>
+// decay_t
+// aligned_storage
+#include <utility>
+
 // adapted from http://stlab.cc/tips/small-object-optimizations.html
 //
 // Creates a type erased wrapper around a concept.
@@ -33,10 +44,10 @@
  *
  * the Base::Base will provide the constructors.
  * the Base::data(self) will provide a reference to the underlying type.
- * the concept vtable must be a constexpr object and defined with the
+ * the concept vtable must be a constexpr object and constructed with the
  * appropriate functions.
  *
- * Base::underlying_type contains the underlying type.
+ * Base::underlying_type contains the underlying type if needed.
  *
  * 3. The handle
  * using my_base = poly::handle<my_concept, my_model, 8>;
@@ -63,6 +74,7 @@
 
 namespace poly {
 
+// the base concept, allows us to move and destroy our handle safely.
 struct concept
 {
 	void (*_dtor)(void*) noexcept = nullptr;
@@ -72,6 +84,7 @@ struct concept
 template<typename T, bool is_small>
 struct model;
 
+// the small model, stores T directly, allows access via Base::data()
 template<typename T>
 struct model<T, true>
 {
@@ -100,7 +113,7 @@ private:
 	}
 	static void _move(void* self, void* x) noexcept
 	{
-		new (x) model(std::move(*static_cast<model*>(self)));
+		new (x) model(std::move(data(self)));
 	}
 protected:
 
@@ -108,6 +121,7 @@ protected:
 	static constexpr concept vtable{_dtor, _move};
 };
 
+// the large model, stores T as std::unique_ptr<T>
 template<typename T>
 struct model<T, false> : model<std::unique_ptr<T>, true>
 {
@@ -133,6 +147,7 @@ struct model<T, false> : model<std::unique_ptr<T>, true>
 
 static constexpr size_t default_size = sizeof(void*) * 4;
 
+// the base handle, defines the right constructors, and destructors.
 template<
 	typename Concept,
 	template<typename> class Model,
@@ -141,14 +156,20 @@ template<
 struct handle
 {
 public:
-	static_assert(small_size >= sizeof(std::unique_ptr<void>), "small_size too small");
+	static_assert(sizeof(Model<poly::model<std::unique_ptr<void>, true>>)
+		      <= small_size,
+		      "small_size too small to store model");
 
 	template<typename T>
 	handle(T && x)
 	{
-		using small_model_t = Model<poly::model<std::decay_t<T>, true>>;
+		using dT = std::decay_t<T>;
+		// check if model is small enough to fit in inline storage
+		using small_model_t = Model<poly::model<dT, true>>;
 		constexpr bool is_small = sizeof(small_model_t) <= small_size;
-		using model_t = Model<poly::model<std::decay_t<T>, is_small>>;
+		// get correct model to use for storage.
+		using model_t = Model<poly::model<dT, is_small>>;
+		// construct model, and set vtable
 		new (&_model) model_t(std::forward<T>(x));
 		_concept = &model_t::vtable;
 	}
@@ -170,7 +191,6 @@ public:
 		}
 		return *this;
 	}
-
 protected:
 	template<typename F, typename... Args>
 	auto poly_call(F f, Args&&... args) -> decltype(auto) {
@@ -183,12 +203,10 @@ protected:
 	}
 
 	using concept = Concept;
-
 private:
 	std::aligned_storage_t<small_size> _model;
 	const Concept* _concept = nullptr;
 };
 
 } // namespace poly
-
-
+#endif

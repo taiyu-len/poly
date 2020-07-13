@@ -9,10 +9,10 @@ struct test_concept : poly::concept
 template<typename Base>
 struct test_model : Base
 {
-	using Base::Base;
+	using Base::Base, Base::data;
 	static void _call(void* self, int x)
 	{
-		Base::data(self)(x);
+		data(self)(x);
 	}
 	static constexpr test_concept vtable{Base::vtable, _call};
 };
